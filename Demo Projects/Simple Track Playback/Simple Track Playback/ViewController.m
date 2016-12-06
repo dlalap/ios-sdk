@@ -16,7 +16,9 @@
 
 #import "Config.h"
 #import "ViewController.h"
-#import <Spotify/SPTDiskCache.h>
+#import <SpotifyAuthentication/SpotifyAuthentication.h>
+#import <SpotifyMetadata/SpotifyMetadata.h>
+#import <AVFoundation/AVFoundation.h>
 
 @interface ViewController () <SPTAudioStreamingDelegate>
 
@@ -188,9 +190,20 @@
             UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Error init" message:[error description] preferredStyle:UIAlertControllerStyleAlert];
             [alert addAction:[UIAlertAction actionWithTitle:@"Ok" style:UIAlertActionStyleDefault handler:nil]];
             [self presentViewController:alert animated:YES completion:nil];
-            [self audioStreamingDidLogout:nil];
+            [self closeSession];
         }
     }
+}
+
+- (void)closeSession {
+    NSError *error = nil;
+    if (![self.player stopWithError:&error]) {
+        UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Error deinit" message:[error description] preferredStyle:UIAlertControllerStyleAlert];
+        [alert addAction:[UIAlertAction actionWithTitle:@"Ok" style:UIAlertActionStyleDefault handler:nil]];
+        [self presentViewController:alert animated:YES completion:nil];
+    }
+    [SPTAuth defaultInstance].session = nil;
+    [self.navigationController popViewControllerAnimated:YES];
 }
 
 #pragma mark - Track Player Delegates
@@ -206,6 +219,11 @@
 
 - (void)audioStreaming:(SPTAudioStreamingController *)audioStreaming didChangePlaybackStatus:(BOOL)isPlaying {
     NSLog(@"is playing = %d", isPlaying);
+    if (isPlaying) {
+        [self activateAudioSession];
+    } else {
+        [self deactivateAudioSession];
+    }
 }
 
 -(void)audioStreaming:(SPTAudioStreamingController *)audioStreaming didChangeMetadata:(SPTPlaybackMetadata *)metadata {
@@ -223,19 +241,20 @@
 }
 
 - (void)audioStreamingDidLogout:(SPTAudioStreamingController *)audioStreaming {
-    NSError *error = nil;
-    if (![self.player stopWithError:&error]) {
-        UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Error deinit" message:[error description] preferredStyle:UIAlertControllerStyleAlert];
-        [alert addAction:[UIAlertAction actionWithTitle:@"Ok" style:UIAlertActionStyleDefault handler:nil]];
-        [self presentViewController:alert animated:YES completion:nil];
-        [self audioStreamingDidLogout:nil];
-    }
-    [SPTAuth defaultInstance].session = nil;
-    [self.navigationController popViewControllerAnimated:YES];
+    [self closeSession];
 }
 
-- (void)audioStreaming:(SPTAudioStreamingController *)audioStreaming didReceiveError:(SpErrorCode)errorCode withName:(NSString *)name {
-    NSLog(@"didReceiveError: %zd %@", errorCode, name);
+- (void)audioStreaming:(SPTAudioStreamingController *)audioStreaming didReceiveError:(NSError* )error {
+    NSLog(@"didReceiveError: %zd %@", error.code, error.localizedDescription);
+
+    if (error.code == SPErrorNeedsPremium) {
+        UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Premium account required" message:@"Premium account is required to showcase application functionality. Please login using premium account." preferredStyle:UIAlertControllerStyleAlert];
+        [alert addAction:[UIAlertAction actionWithTitle:@"Ok" style:UIAlertActionStyleDefault handler:^(UIAlertAction* action){
+            [self closeSession];
+        }]];
+        [self presentViewController:alert animated:YES completion:nil];
+
+    }
 }
 
 - (void)audioStreaming:(SPTAudioStreamingController *)audioStreaming didChangePosition:(NSTimeInterval)position {
@@ -269,4 +288,19 @@
         }
     }];
 }
+
+#pragma mark - Audio Session
+
+- (void)activateAudioSession
+{
+    [[AVAudioSession sharedInstance] setCategory:AVAudioSessionCategoryPlayback
+                                           error:nil];
+    [[AVAudioSession sharedInstance] setActive:YES error:nil];
+}
+
+- (void)deactivateAudioSession
+{
+    [[AVAudioSession sharedInstance] setActive:NO error:nil];
+}
+
 @end
